@@ -24,30 +24,30 @@ func main() {
 
 	ws.OnLiveFeed(func(feed upstox.LiveFeedMessage) {
 		fmt.Printf("📈 Full Market Data Update - %d\n", feed.CurrentTS)
-		
+
 		for symbol, data := range feed.Feeds {
 			fmt.Printf("🏢 Symbol: %s\n", symbol)
-			
+
 			if data.FullFeed != nil && data.FullFeed.MarketFF != nil {
 				market := data.FullFeed.MarketFF
-				
+
 				// LTPC Data
 				if market.LTPC != nil {
 					fmt.Printf("   💰 LTPC: LTP=₹%.2f, LTQ=%d, CP=₹%.2f\n",
 						market.LTPC.LTP, market.LTPC.LTQ, market.LTPC.CP)
 				}
-				
+
 				// Market Statistics
 				fmt.Printf("   📊 Stats: ATP=₹%.2f, VTT=%d, OI=%.0f\n",
 					market.ATP, market.VTT, market.OI)
-				
+
 				if market.IV > 0 {
 					fmt.Printf("   📉 Volatility: IV=%.2f%%\n", market.IV*100)
 				}
-				
+
 				fmt.Printf("   🟢 Buy Qty: %.0f, 🔴 Sell Qty: %.0f\n",
 					market.TBQ, market.TSQ)
-				
+
 				// Market Depth (first 5 levels)
 				if len(market.MarketLevel) > 0 {
 					fmt.Println("   📊 Market Depth:")
@@ -59,7 +59,7 @@ func main() {
 							i+1, quote.BidP, quote.BidQ, quote.AskP, quote.AskQ)
 					}
 				}
-				
+
 				// Option Greeks (if available)
 				if market.OptionGreeks != nil {
 					fmt.Printf("   🔢 Greeks: Δ=%.4f, Γ=%.4f, Θ=%.4f, ν=%.4f, ρ=%.4f\n",
@@ -67,7 +67,7 @@ func main() {
 						market.OptionGreeks.Theta, market.OptionGreeks.Vega,
 						market.OptionGreeks.Rho)
 				}
-				
+
 				// OHLC Data (if available)
 				if len(market.MarketOHLC) > 0 {
 					for _, ohlc := range market.MarketOHLC {
@@ -76,7 +76,7 @@ func main() {
 					}
 				}
 			}
-			
+
 			fmt.Println()
 		}
 	})

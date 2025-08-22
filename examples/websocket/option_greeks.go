@@ -24,33 +24,33 @@ func main() {
 
 	ws.OnLiveFeed(func(feed upstox.LiveFeedMessage) {
 		fmt.Printf("📊 Option Greeks Update - %d\n", feed.CurrentTS)
-		
+
 		for symbol, data := range feed.Feeds {
 			fmt.Printf("🎯 Option: %s\n", symbol)
-			
+
 			if data.FirstLevelWithGreeks != nil {
 				greeks := data.FirstLevelWithGreeks
-				
+
 				// LTPC Data
 				if greeks.LTPC != nil {
 					fmt.Printf("   💰 Price: LTP=₹%.2f, LTQ=%d, CP=₹%.2f\n",
 						greeks.LTPC.LTP, greeks.LTPC.LTQ, greeks.LTPC.CP)
 				}
-				
+
 				// First Level Market Depth
 				if greeks.FirstDepth != nil {
 					fmt.Printf("   📊 Depth: Bid ₹%.2f(%d) | Ask ₹%.2f(%d)\n",
 						greeks.FirstDepth.BidP, greeks.FirstDepth.BidQ,
 						greeks.FirstDepth.AskP, greeks.FirstDepth.AskQ)
 				}
-				
+
 				// Option Statistics
 				fmt.Printf("   📈 Stats: VTT=%d, OI=%.0f\n", greeks.VTT, greeks.OI)
-				
+
 				if greeks.IV > 0 {
 					fmt.Printf("   📉 Implied Volatility: %.2f%%\n", greeks.IV*100)
 				}
-				
+
 				// Option Greeks
 				if greeks.OptionGreeks != nil {
 					fmt.Printf("   🔢 Greeks:\n")
@@ -59,7 +59,7 @@ func main() {
 					fmt.Printf("      Theta (Θ): %+.4f (Time decay)\n", greeks.OptionGreeks.Theta)
 					fmt.Printf("      Vega  (ν): %+.4f (Volatility sensitivity)\n", greeks.OptionGreeks.Vega)
 					fmt.Printf("      Rho   (ρ): %+.4f (Interest rate sensitivity)\n", greeks.OptionGreeks.Rho)
-					
+
 					// Risk interpretation
 					if greeks.OptionGreeks.Delta > 0.5 {
 						fmt.Printf("   ✅ Deep ITM Call / OTM Put\n")
@@ -70,13 +70,13 @@ func main() {
 					} else {
 						fmt.Printf("   ✅ Deep ITM Put / OTM Call\n")
 					}
-					
+
 					if greeks.OptionGreeks.Theta < -0.1 {
 						fmt.Printf("   ⚠️  High time decay\n")
 					}
 				}
 			}
-			
+
 			fmt.Println()
 		}
 	})

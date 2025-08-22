@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
 
 	pb "github.com/adeludedperson/go-upstox/pb"

@@ -29,11 +29,11 @@ func main() {
 
 	ws.OnLiveFeed(func(feed upstox.LiveFeedMessage) {
 		fmt.Printf("📈 Feed Update [%d] - %d instruments\n", feed.CurrentTS, len(feed.Feeds))
-		
+
 		for symbol, data := range feed.Feeds {
 			var price float64
 			var mode string
-			
+
 			switch {
 			case data.LTPC != nil:
 				price = data.LTPC.LTP
@@ -45,7 +45,7 @@ func main() {
 				price = data.FirstLevelWithGreeks.LTPC.LTP
 				mode = "GREEKS"
 			}
-			
+
 			if price > 0 {
 				fmt.Printf("   %s [%s]: ₹%.2f\n", symbol, mode, price)
 			}
@@ -72,7 +72,7 @@ func main() {
 	// Demonstrate dynamic subscription management
 	go func() {
 		time.Sleep(5 * time.Second)
-		
+
 		// Add more instruments
 		fmt.Println("➕ Adding more instruments...")
 		newInstruments := []string{
@@ -82,25 +82,25 @@ func main() {
 		if err := ws.Subscribe(newInstruments...); err != nil {
 			log.Printf("Failed to add instruments: %v", err)
 		}
-		
+
 		time.Sleep(5 * time.Second)
-		
+
 		// Change mode for existing instruments
 		fmt.Println("🔄 Changing to FULL mode for equity instruments...")
 		if err := ws.ChangeMode("full", initialInstruments...); err != nil {
 			log.Printf("Failed to change mode: %v", err)
 		}
-		
+
 		time.Sleep(5 * time.Second)
-		
+
 		// Unsubscribe from some instruments
 		fmt.Println("➖ Unsubscribing from one instrument...")
 		if err := ws.Unsubscribe("NSE_EQ|INE467B01029"); err != nil {
 			log.Printf("Failed to unsubscribe: %v", err)
 		}
-		
+
 		time.Sleep(5 * time.Second)
-		
+
 		// Subscribe to new instrument with specific mode
 		fmt.Println("🎯 Adding new instrument with FULL mode...")
 		if err := ws.SubscribeWithMode("full", "NSE_EQ|INE009A01021"); err != nil { // Infosys
@@ -114,7 +114,7 @@ func main() {
 	fmt.Println("📡 Streaming data with dynamic subscription management...")
 	fmt.Println("🔄 Watch for automatic subscription changes every 5 seconds")
 	fmt.Println("⏹️  Press Ctrl+C to exit")
-	
+
 	<-quit
 	fmt.Println("\n👋 Shutting down...")
 }

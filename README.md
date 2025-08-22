@@ -1,17 +1,26 @@
 # Go-Upstox
 
-A Go package for Upstox broker integration with real-time market data streaming via WebSocket.
+A comprehensive Go package for Upstox broker integration with real-time market data streaming and order management.
 
 > **Note**: This package was created for personal use in my trading project. Feel free to fork, modify, or use it however you want
 
 ## Features
 
-- **WebSocket Market Data**: Real-time streaming of market data using Upstox Market Data Feed V3
+### Market Data (WebSocket)
+- **Real-time Streaming**: Market data using Upstox Market Data Feed V3
 - **Subscription Management**: Dynamic subscription/unsubscription without reconnecting
 - **Multiple Data Modes**: Support for LTPC, Full, Option Greeks, and Full D30 modes
 - **Typed Callbacks**: Clean, typed Go structs for market data
 - **Automatic Protobuf Handling**: Internal protobuf encoding/decoding
 - **Connection Management**: Automatic authorization flow and connection handling
+
+### Order Management (REST API)
+- **Order Placement**: Market orders with auto-slicing support
+- **Position Management**: Real-time position tracking and closure
+- **Order Tracking**: Complete order book and individual order details
+- **Convenience Methods**: Simple buy/sell order placement
+- **Error Handling**: Comprehensive error responses from API
+- **Emergency Exit**: Close all positions with a single call
 
 ## Installation
 
@@ -21,7 +30,103 @@ go get github.com/adeludedperson/go-upstox
 
 ## Usage
 
-### Basic Setup
+### Order Management
+
+#### Basic Order Placement
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+
+    "github.com/adeludedperson/go-upstox"
+)
+
+func main() {
+    // Create manager instance
+    manager := upstox.NewManager("your-client-id", "your-client-secret", "your-access-token")
+
+    // Place a buy order for 1 share of SBIN
+    instrumentToken := "NSE_EQ|INE062A01020"
+    buyResp, err := manager.PlaceBuyOrder(instrumentToken, 1)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Buy order placed! Order ID: %s\n", buyResp.Data.OrderIDs[0])
+
+    // Place a sell order for 1 share
+    sellResp, err := manager.PlaceSellOrder(instrumentToken, 1)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Sell order placed! Order ID: %s\n", sellResp.Data.OrderIDs[0])
+
+    // Alternative: Use PlaceMarketOrder directly
+    resp, err := manager.PlaceMarketOrder(instrumentToken, 2, "BUY")
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Market order placed! Order ID: %s\n", resp.Data.OrderIDs[0])
+}
+```
+
+#### Position Management
+
+```go
+// Get current positions
+positions, err := manager.GetPositions()
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, pos := range positions {
+    fmt.Printf("Symbol: %s, Qty: %d, P&L: %.2f\n", 
+        pos.TradingSymbol, pos.Quantity, pos.PNL)
+}
+
+// Close a specific position
+closeResp, err := manager.ClosePosition("NSE_EQ|INE062A01020")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Position closed! Order ID: %s\n", closeResp.Data.OrderIDs[0])
+
+// Emergency: Close all positions
+responses, err := manager.CloseAllPositions()
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("All positions closed! %d orders placed\n", len(responses))
+```
+
+#### Order Tracking
+
+```go
+// Get order book (all orders for the day)
+orders, err := manager.GetOrderBook()
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, order := range orders {
+    fmt.Printf("Order ID: %s, Symbol: %s, Status: %s\n", 
+        order.OrderID, order.TradingSymbol, order.Status)
+}
+
+// Get specific order details
+orderDetail, err := manager.GetOrderDetails("231019025057849")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Order Status: %s, Filled: %d/%d\n", 
+    orderDetail.Status, orderDetail.FilledQuantity, orderDetail.Quantity)
+```
+
+### WebSocket Market Data
+
+#### Basic Setup
 
 ```go
 package main
@@ -160,12 +265,25 @@ ws.OnLiveFeed(func(feed upstox.LiveFeedMessage) {
 
 ```go
 type Manager struct {
-    // Contains client credentials and access token
+    // Contains client credentials, access token, and HTTP client
 }
 
 func NewManager(clientID, clientSecret, accessToken string) *Manager
-func (m *Manager) PlaceOrder(side OrderSide, quantity int, instrumentKey string) error  // Placeholder
 func (m *Manager) NewWebSocket() *WebSocket
+
+// Order Management
+func (m *Manager) PlaceMarketOrder(instrumentToken string, quantity int, side string) (*OrderResponse, error)
+func (m *Manager) PlaceBuyOrder(instrumentToken string, quantity int) (*OrderResponse, error)
+func (m *Manager) PlaceSellOrder(instrumentToken string, quantity int) (*OrderResponse, error)
+
+// Position Management
+func (m *Manager) GetPositions() ([]Position, error)
+func (m *Manager) ClosePosition(instrumentToken string) (*OrderResponse, error)
+func (m *Manager) CloseAllPositions() ([]OrderResponse, error)
+
+// Order Tracking
+func (m *Manager) GetOrderBook() ([]Order, error)
+func (m *Manager) GetOrderDetails(orderID string) (*Order, error)
 ```
 
 ### WebSocket
@@ -224,6 +342,44 @@ type MarketFullFeed struct {
     TBQ          float64       `json:"tbq,omitempty"`          // Total Buy Quantity
     TSQ          float64       `json:"tsq,omitempty"`          // Total Sell Quantity
 }
+
+// Order and Position Types
+type OrderResponse struct {
+    Status   string             `json:"status"`
+    Data     *OrderResponseData `json:"data,omitempty"`
+    Metadata *OrderMetadata     `json:"metadata,omitempty"`
+    Errors   []OrderError       `json:"errors,omitempty"`
+    Summary  *OrderSummary      `json:"summary,omitempty"`
+}
+
+type Position struct {
+    Exchange        string  `json:"exchange"`
+    InstrumentToken string  `json:"instrument_token"`
+    TradingSymbol   string  `json:"trading_symbol"`
+    Quantity        int     `json:"quantity"`
+    PNL             float64 `json:"pnl"`
+    LastPrice       float64 `json:"last_price"`
+    AveragePrice    float64 `json:"average_price"`
+    Unrealised      float64 `json:"unrealised"`
+    Realised        float64 `json:"realised"`
+    // ... and many more fields
+}
+
+type Order struct {
+    OrderID           string  `json:"order_id"`
+    InstrumentToken   string  `json:"instrument_token"`
+    TradingSymbol     string  `json:"trading_symbol"`
+    TransactionType   string  `json:"transaction_type"`
+    OrderType         string  `json:"order_type"`
+    Quantity          int     `json:"quantity"`
+    FilledQuantity    int     `json:"filled_quantity"`
+    PendingQuantity   int     `json:"pending_quantity"`
+    Status            string  `json:"status"`
+    Price             float64 `json:"price"`
+    AveragePrice      float64 `json:"average_price"`
+    OrderTimestamp    string  `json:"order_timestamp"`
+    // ... and many more fields
+}
 ```
 
 ## Subscription Limits
@@ -266,10 +422,32 @@ ws.OnLiveFeed(func(feed upstox.LiveFeedMessage) {
 
 See the [examples](examples/) directory for more detailed usage examples:
 
-- `basic_ltpc.go` - Basic LTPC data streaming
-- `full_market_data.go` - Complete market data with depth
-- `option_greeks.go` - Option chain data with greeks
-- `dynamic_subscriptions.go` - Managing subscriptions dynamically
+### WebSocket Examples
+- [`websocket/basic_ltpc.go`](examples/websocket/basic_ltpc.go) - Basic LTPC data streaming
+- [`websocket/full_market_data.go`](examples/websocket/full_market_data.go) - Complete market data with depth
+- [`websocket/option_greeks.go`](examples/websocket/option_greeks.go) - Option chain data with greeks
+- [`websocket/dynamic_subscriptions.go`](examples/websocket/dynamic_subscriptions.go) - Managing subscriptions dynamically
+
+### Order Management Examples
+- [`orders/basic_orders.go`](examples/orders/basic_orders.go) - Basic order placement (buy/sell)
+- [`orders/position_management.go`](examples/orders/position_management.go) - Position tracking and closure
+- [`orders/order_tracking.go`](examples/orders/order_tracking.go) - Order book and order details
+
+## Key Features & Notes
+
+### Order Management
+- **Product Type**: Defaults to "I" (Intraday) for all market orders
+- **Auto-Slicing**: Enabled by default to handle large orders
+- **Market Orders**: Uses price = 0 and order_type = "MARKET"
+- **Error Handling**: Comprehensive API error responses
+- **Position Closure**: Automatically determines opposite side for closing
+
+### API Endpoints Used
+- **Place Order**: `POST https://api-hft.upstox.com/v3/order/place`
+- **Get Positions**: `GET https://api.upstox.com/v2/portfolio/short-term-positions`
+- **Exit All Positions**: `POST https://api.upstox.com/v2/order/positions/exit`
+- **Get Order Book**: `GET https://api.upstox.com/v2/order/retrieve-all`
+- **Get Order Details**: `GET https://api.upstox.com/v2/order/details`
 
 ## Contributing
 
