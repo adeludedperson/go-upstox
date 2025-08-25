@@ -261,12 +261,53 @@ func (m *Manager) GetOrderDetails(orderID string) (*Order, error) {
 	return &orderDetailResp.Data, nil
 }
 
-func (m *Manager) NewWebSocket() *WebSocket {
-	return &WebSocket{
-		manager:       m,
-		subscriptions: make(map[string]InstrumentSubscription),
-		done:          make(chan struct{}),
+func (m *Manager) NewWebSocketManager(instrumentKeys []string, onPriceUpdate func(string, float64, *int32)) (*WebSocketManager, error) {
+	wsURL, err := m.getAuthorizedWebSocketURL()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get authorized WebSocket URL: %w", err)
 	}
+
+	config := WebSocketConfig{
+		InstrumentKeys: instrumentKeys,
+		Token:          m.accessToken,
+	}
+
+	return NewWebSocketManager(wsURL, config, onPriceUpdate), nil
+}
+
+func (m *Manager) getAuthorizedWebSocketURL() (string, error) {
+	authorizeURL := "https://api.upstox.com/v3/feed/market-data-feed/authorize"
+	
+	req, err := http.NewRequest("GET", authorizeURL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var authResp AuthorizeResponse
+	if err := json.Unmarshal(body, &authResp); err != nil {
+		return "", err
+	}
+
+	if authResp.Status != "success" {
+		return "", fmt.Errorf("authorization failed: %s", authResp.Status)
+	}
+
+	return authResp.Data.AuthorizedRedirectURI, nil
 }
 
 func (m *Manager) GetAccessToken() string {
