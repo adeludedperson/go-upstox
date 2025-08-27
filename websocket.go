@@ -16,18 +16,18 @@ import (
 )
 
 type WebSocketManager struct {
-	ws                 *websocket.Conn
-	url                string
-	config             WebSocketConfig
-	onPriceUpdate      func(symbol string, price float64, ltq *int32)
-	reconnectAttempts  int
+	ws                   *websocket.Conn
+	url                  string
+	config               WebSocketConfig
+	onPriceUpdate        func(symbol string, price float64, ltq *int32)
+	reconnectAttempts    int
 	maxReconnectAttempts int
-	reconnectDelay     time.Duration
-	isConnecting       bool
-	shouldReconnect    bool
-	mu                 sync.RWMutex
-	ctx                context.Context
-	cancel             context.CancelFunc
+	reconnectDelay       time.Duration
+	isConnecting         bool
+	shouldReconnect      bool
+	mu                   sync.RWMutex
+	ctx                  context.Context
+	cancel               context.CancelFunc
 }
 
 type WebSocketConfig struct {
@@ -36,8 +36,8 @@ type WebSocketConfig struct {
 }
 
 type SubscriptionMessage struct {
-	GUID   string                 `json:"guid"`
-	Method string                 `json:"method"`
+	GUID   string                  `json:"guid"`
+	Method string                  `json:"method"`
 	Data   SubscriptionMessageData `json:"data"`
 }
 
@@ -94,7 +94,7 @@ func (wsm *WebSocketManager) connect() error {
 	if len(wsm.config.InstrumentKeys) > 0 {
 		return wsm.subscribe()
 	}
-	
+
 	return nil
 }
 
@@ -151,13 +151,18 @@ func (wsm *WebSocketManager) handleMessages() {
 }
 
 func (wsm *WebSocketManager) processMessage(data []byte) {
+	log.Printf("Received binary message of %d bytes", len(data))
+
 	var feedResponse pb.FeedResponse
 	if err := proto.Unmarshal(data, &feedResponse); err != nil {
 		log.Printf("Failed to unmarshal protobuf message: %v", err)
 		return
 	}
 
-	if feedResponse.Type != pb.Type_live_feed {
+	log.Printf("Processed feed response with %d symbols", len(feedResponse.Feeds))
+	log.Printf("Feed Response: %+v", feedResponse)
+
+	if feedResponse.Type != pb.Type_live_feed && feedResponse.Type != pb.Type_initial_feed {
 		return
 	}
 
@@ -220,7 +225,7 @@ func (wsm *WebSocketManager) handleDisconnect() {
 		wsm.reconnectDelay *= 2
 
 		log.Printf("Reconnecting attempt %d in %v", wsm.reconnectAttempts, wsm.reconnectDelay)
-		
+
 		time.AfterFunc(wsm.reconnectDelay, func() {
 			if err := wsm.connect(); err != nil {
 				log.Printf("Reconnection failed: %v", err)
@@ -255,10 +260,10 @@ func generateGUID() (string, error) {
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
-	
+
 	bytes[6] = (bytes[6] & 0x0f) | 0x40
 	bytes[8] = (bytes[8] & 0x3f) | 0x80
-	
+
 	return fmt.Sprintf("%x-%x-%x-%x-%x",
 		bytes[0:4], bytes[4:6], bytes[6:8], bytes[8:10], bytes[10:16]), nil
 }
