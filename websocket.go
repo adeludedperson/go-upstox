@@ -159,8 +159,8 @@ func (wsm *WebSocketManager) processMessage(data []byte) {
 		return
 	}
 
-	log.Printf("Processed feed response with %d symbols", len(feedResponse.Feeds))
-	log.Printf("Feed Response: %+v", feedResponse)
+	// log.Printf("Processed feed response with %d symbols", len(feedResponse.Feeds))
+	// log.Printf("Feed Response: %+v", feedResponse)
 
 	if feedResponse.Type != pb.Type_live_feed && feedResponse.Type != pb.Type_initial_feed {
 		return

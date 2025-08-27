@@ -81,6 +81,9 @@ func (m *Manager) placeOrder(orderReq OrderRequest) (*OrderResponse, error) {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	// Log raw response for debugging
+	fmt.Printf("Order Place Response - Status: %d, Body: %s\n", resp.StatusCode, string(body))
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
@@ -90,7 +93,50 @@ func (m *Manager) placeOrder(orderReq OrderRequest) (*OrderResponse, error) {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	return &orderResp, nil
+	// Validate the API response status even if HTTP status is OK
+	if orderResp.Status != "success" {
+		errorMsg := "Order placement failed"
+		if len(orderResp.Errors) > 0 {
+			errorMsg = orderResp.Errors[0].Message
+		}
+		return nil, fmt.Errorf("API returned error status '%s': %s", orderResp.Status, errorMsg)
+	}
+
+	// Verify that we have order IDs
+	if orderResp.Data == nil || len(orderResp.Data.OrderIDs) == 0 {
+		return nil, fmt.Errorf("no order IDs returned in successful response")
+	}
+
+	// Wait briefly and get the actual order details to see the real status
+	time.Sleep(500 * time.Millisecond)
+	
+	orderID := orderResp.Data.OrderIDs[0]
+	orderDetails, err := m.GetOrderDetails(orderID)
+	if err != nil {
+		// If we can't get order details, return the original response
+		fmt.Printf("Warning: Could not get order details for ID %s: %v\n", orderID, err)
+		return &orderResp, nil
+	}
+
+	// Create a response with the actual order status
+	detailedResponse := &OrderResponse{
+		Status: "success",
+		Data: &OrderResponseData{
+			OrderIDs: orderResp.Data.OrderIDs,
+		},
+		Metadata: orderResp.Metadata,
+	}
+
+	// If order was rejected, add error details
+	if orderDetails.Status == "rejected" {
+		detailedResponse.Status = "error"
+		detailedResponse.Errors = []OrderError{{
+			ErrorCode: "ORDER_REJECTED",
+			Message:   orderDetails.StatusMessage,
+		}}
+	}
+
+	return detailedResponse, nil
 }
 
 func (m *Manager) GetPositions() ([]Position, error) {
