@@ -367,3 +367,47 @@ func (m *Manager) GetClientID() string {
 func (m *Manager) GetClientSecret() string {
 	return m.clientSecret
 }
+
+func (m *Manager) GetFundsAndMargin(segment ...string) (*FundsResponse, error) {
+	url := "https://api.upstox.com/v2/user/get-funds-and-margin"
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if len(segment) > 0 {
+		q := req.URL.Query()
+		q.Add("segment", segment[0])
+		req.URL.RawQuery = q.Encode()
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var fundsResp FundsResponse
+	if err := json.Unmarshal(body, &fundsResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if fundsResp.Status != "success" {
+		return nil, fmt.Errorf("API returned error status: %s", fundsResp.Status)
+	}
+
+	return &fundsResp, nil
+}

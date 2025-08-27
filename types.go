@@ -287,3 +287,23 @@ type OrderDetailResponse struct {
 	Status string `json:"status"`
 	Data   Order  `json:"data"`
 }
+
+type MarginData struct {
+	UsedMargin      float64 `json:"used_margin"`
+	PayinAmount     float64 `json:"payin_amount"`
+	SpanMargin      float64 `json:"span_margin"`
+	AdhocMargin     float64 `json:"adhoc_margin"`
+	NotionalCash    float64 `json:"notional_cash"`
+	AvailableMargin float64 `json:"available_margin"`
+	ExposureMargin  float64 `json:"exposure_margin"`
+}
+
+type FundsData struct {
+	Equity    MarginData `json:"equity"`
+	Commodity MarginData `json:"commodity"`
+}
+
+type FundsResponse struct {
+	Status string    `json:"status"`
+	Data   FundsData `json:"data"`
+}
