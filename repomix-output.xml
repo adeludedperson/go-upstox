@@ -1813,6 +1813,26 @@ type OrderDetailResponse struct {
 	Status string `json:"status"`
 	Data   Order  `json:"data"`
 }
+
+type MarginData struct {
+	UsedMargin      float64 `json:"used_margin"`
+	PayinAmount     float64 `json:"payin_amount"`
+	SpanMargin      float64 `json:"span_margin"`
+	AdhocMargin     float64 `json:"adhoc_margin"`
+	NotionalCash    float64 `json:"notional_cash"`
+	AvailableMargin float64 `json:"available_margin"`
+	ExposureMargin  float64 `json:"exposure_margin"`
+}
+
+type FundsData struct {
+	Equity    MarginData `json:"equity"`
+	Commodity MarginData `json:"commodity"`
+}
+
+type FundsResponse struct {
+	Status string    `json:"status"`
+	Data   FundsData `json:"data"`
+}
 </file>
 
 <file path="manager.go">
@@ -1899,6 +1919,9 @@ func (m *Manager) placeOrder(orderReq OrderRequest) (*OrderResponse, error) {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	// Log raw response for debugging
+	fmt.Printf("Order Place Response - Status: %d, Body: %s\n", resp.StatusCode, string(body))
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
@@ -1908,7 +1931,50 @@ func (m *Manager) placeOrder(orderReq OrderRequest) (*OrderResponse, error) {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	return &orderResp, nil
+	// Validate the API response status even if HTTP status is OK
+	if orderResp.Status != "success" {
+		errorMsg := "Order placement failed"
+		if len(orderResp.Errors) > 0 {
+			errorMsg = orderResp.Errors[0].Message
+		}
+		return nil, fmt.Errorf("API returned error status '%s': %s", orderResp.Status, errorMsg)
+	}
+
+	// Verify that we have order IDs
+	if orderResp.Data == nil || len(orderResp.Data.OrderIDs) == 0 {
+		return nil, fmt.Errorf("no order IDs returned in successful response")
+	}
+
+	// Wait briefly and get the actual order details to see the real status
+	time.Sleep(500 * time.Millisecond)
+	
+	orderID := orderResp.Data.OrderIDs[0]
+	orderDetails, err := m.GetOrderDetails(orderID)
+	if err != nil {
+		// If we can't get order details, return the original response
+		fmt.Printf("Warning: Could not get order details for ID %s: %v\n", orderID, err)
+		return &orderResp, nil
+	}
+
+	// Create a response with the actual order status
+	detailedResponse := &OrderResponse{
+		Status: "success",
+		Data: &OrderResponseData{
+			OrderIDs: orderResp.Data.OrderIDs,
+		},
+		Metadata: orderResp.Metadata,
+	}
+
+	// If order was rejected, add error details
+	if orderDetails.Status == "rejected" {
+		detailedResponse.Status = "error"
+		detailedResponse.Errors = []OrderError{{
+			ErrorCode: "ORDER_REJECTED",
+			Message:   orderDetails.StatusMessage,
+		}}
+	}
+
+	return detailedResponse, nil
 }
 
 func (m *Manager) GetPositions() ([]Position, error) {
@@ -2139,6 +2205,50 @@ func (m *Manager) GetClientID() string {
 func (m *Manager) GetClientSecret() string {
 	return m.clientSecret
 }
+
+func (m *Manager) GetFundsAndMargin(segment ...string) (*FundsResponse, error) {
+	url := "https://api.upstox.com/v2/user/get-funds-and-margin"
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if len(segment) > 0 {
+		q := req.URL.Query()
+		q.Add("segment", segment[0])
+		req.URL.RawQuery = q.Encode()
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var fundsResp FundsResponse
+	if err := json.Unmarshal(body, &fundsResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if fundsResp.Status != "success" {
+		return nil, fmt.Errorf("API returned error status: %s", fundsResp.Status)
+	}
+
+	return &fundsResp, nil
+}
 </file>
 
 <file path="websocket.go">
@@ -2160,18 +2270,18 @@ import (
 )
 
 type WebSocketManager struct {
-	ws                 *websocket.Conn
-	url                string
-	config             WebSocketConfig
-	onPriceUpdate      func(symbol string, price float64, ltq *int32)
-	reconnectAttempts  int
+	ws                   *websocket.Conn
+	url                  string
+	config               WebSocketConfig
+	onPriceUpdate        func(symbol string, price float64, ltq *int32)
+	reconnectAttempts    int
 	maxReconnectAttempts int
-	reconnectDelay     time.Duration
-	isConnecting       bool
-	shouldReconnect    bool
-	mu                 sync.RWMutex
-	ctx                context.Context
-	cancel             context.CancelFunc
+	reconnectDelay       time.Duration
+	isConnecting         bool
+	shouldReconnect      bool
+	mu                   sync.RWMutex
+	ctx                  context.Context
+	cancel               context.CancelFunc
 }
 
 type WebSocketConfig struct {
@@ -2180,8 +2290,8 @@ type WebSocketConfig struct {
 }
 
 type SubscriptionMessage struct {
-	GUID   string                 `json:"guid"`
-	Method string                 `json:"method"`
+	GUID   string                  `json:"guid"`
+	Method string                  `json:"method"`
 	Data   SubscriptionMessageData `json:"data"`
 }
 
@@ -2238,7 +2348,7 @@ func (wsm *WebSocketManager) connect() error {
 	if len(wsm.config.InstrumentKeys) > 0 {
 		return wsm.subscribe()
 	}
-	
+
 	return nil
 }
 
@@ -2295,13 +2405,17 @@ func (wsm *WebSocketManager) handleMessages() {
 }
 
 func (wsm *WebSocketManager) processMessage(data []byte) {
+
 	var feedResponse pb.FeedResponse
 	if err := proto.Unmarshal(data, &feedResponse); err != nil {
 		log.Printf("Failed to unmarshal protobuf message: %v", err)
 		return
 	}
 
-	if feedResponse.Type != pb.Type_live_feed {
+	// log.Printf("Processed feed response with %d symbols", len(feedResponse.Feeds))
+	// log.Printf("Feed Response: %+v", feedResponse)
+
+	if feedResponse.Type != pb.Type_live_feed && feedResponse.Type != pb.Type_initial_feed {
 		return
 	}
 
@@ -2364,7 +2478,7 @@ func (wsm *WebSocketManager) handleDisconnect() {
 		wsm.reconnectDelay *= 2
 
 		log.Printf("Reconnecting attempt %d in %v", wsm.reconnectAttempts, wsm.reconnectDelay)
-		
+
 		time.AfterFunc(wsm.reconnectDelay, func() {
 			if err := wsm.connect(); err != nil {
 				log.Printf("Reconnection failed: %v", err)
@@ -2399,10 +2513,10 @@ func generateGUID() (string, error) {
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
-	
+
 	bytes[6] = (bytes[6] & 0x0f) | 0x40
 	bytes[8] = (bytes[8] & 0x3f) | 0x80
-	
+
 	return fmt.Sprintf("%x-%x-%x-%x-%x",
 		bytes[0:4], bytes[4:6], bytes[6:8], bytes[8:10], bytes[10:16]), nil
 }

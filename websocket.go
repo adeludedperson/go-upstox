@@ -151,7 +151,6 @@ func (wsm *WebSocketManager) handleMessages() {
 }
 
 func (wsm *WebSocketManager) processMessage(data []byte) {
-	log.Printf("Received binary message of %d bytes", len(data))
 
 	var feedResponse pb.FeedResponse
 	if err := proto.Unmarshal(data, &feedResponse); err != nil {
